@@ -1,105 +1,74 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
-import {
-  Users,
-  Shield,
-  ArrowLeftRight,
-  Layers,
-  TrendingUp,
-  Search,
-  Menu,
-  X,
-} from "lucide-react";
-import { useState } from "react";
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Users, Shield, DollarSign, Layers, ArrowLeftRight, Search, Menu, X, Disc } from 'lucide-react';
+import { useState } from 'react';
 
-const NAV_LINKS = [
-  { href: "/players", label: "Joueurs", icon: Users },
-  { href: "/teams", label: "Équipes", icon: Shield },
-  { href: "/contracts", label: "Contrats", icon: TrendingUp },
-  { href: "/line-builder", label: "Line Builder", icon: Layers },
-  { href: "/trade-builder", label: "Mock Trade", icon: ArrowLeftRight },
+const navLinks = [
+  { href: '/players', label: 'Joueurs', icon: Users },
+  { href: '/teams', label: 'Équipes', icon: Shield },
+  { href: '/contracts', label: 'Contrats', icon: DollarSign },
+  { href: '/line-builder', label: 'Line Builder', icon: Layers },
+  { href: '/trade-builder', label: 'Mock Trade', icon: ArrowLeftRight },
 ];
 
 export function Navbar() {
   const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-md">
-      <div className="container mx-auto px-4 max-w-[1400px]">
-        <div className="flex h-16 items-center justify-between">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-sm group-hover:bg-blue-500 transition-colors">
-              H
+    <nav style={{
+      background: 'rgba(8, 11, 20, 0.95)', backdropFilter: 'blur(12px)',
+      borderBottom: '1px solid rgba(59,130,246,0.12)',
+      position: 'sticky', top: 0, zIndex: 50,
+    }}>
+      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '0 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', height: 60, gap: 32 }}>
+          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', flexShrink: 0 }}>
+            <div style={{
+              width: 34, height: 34, background: 'linear-gradient(135deg, #3b82f6, #06b6d4)',
+              borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 0 12px rgba(59,130,246,0.4)',
+            }}>
+              <Disc size={18} color="white" strokeWidth={2.5} />
             </div>
-            <span className="font-bold text-lg text-foreground hidden sm:block">
-              Hockey<span className="text-blue-400">Hub</span>
+            <span style={{ fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#e2e8f0' }}>
+              Hockey<span style={{ background: 'linear-gradient(135deg, #3b82f6, #06b6d4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Hub</span>
             </span>
           </Link>
 
-          {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-1">
-            {NAV_LINKS.map(({ href, label, icon: Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                className={cn(
-                  "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                  pathname.startsWith(href)
-                    ? "bg-blue-600/20 text-blue-400"
-                    : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-                )}
-              >
-                <Icon className="w-4 h-4" />
-                {label}
-              </Link>
-            ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1 }}>
+            {navLinks.map(({ href, label, icon: Icon }) => {
+              const active = pathname === href || pathname.startsWith(href + '/');
+              return (
+                <Link key={href} href={href} style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 12px', borderRadius: 8,
+                  fontSize: '0.85rem', fontWeight: active ? 600 : 500,
+                  textDecoration: 'none',
+                  color: active ? '#3b82f6' : '#94a3b8',
+                  background: active ? 'rgba(59,130,246,0.1)' : 'transparent',
+                  border: active ? '1px solid rgba(59,130,246,0.2)' : '1px solid transparent',
+                  transition: 'all 0.15s', whiteSpace: 'nowrap',
+                }}>
+                  <Icon size={15} strokeWidth={2} />
+                  {label}
+                </Link>
+              );
+            })}
           </div>
 
-          {/* Search + mobile toggle */}
-          <div className="flex items-center gap-2">
-            <Link
-              href="/search"
-              className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-            >
-              <Search className="w-4 h-4" />
-              <span className="hidden sm:block">Rechercher...</span>
-            </Link>
-
-            <button
-              className="md:hidden p-2 rounded-md text-muted-foreground hover:text-foreground"
-              onClick={() => setMobileOpen(!mobileOpen)}
-            >
-              {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-          </div>
+          <Link href="/search" style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '6px 14px', borderRadius: 8,
+            background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(59,130,246,0.12)',
+            color: '#64748b', fontSize: '0.8rem', textDecoration: 'none',
+          }}>
+            <Search size={14} />
+            <span>Rechercher...</span>
+          </Link>
         </div>
-
-        {/* Mobile nav */}
-        {mobileOpen && (
-          <div className="md:hidden pb-4 border-t border-border mt-2 pt-2">
-            {NAV_LINKS.map(({ href, label, icon: Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium transition-colors",
-                  pathname.startsWith(href)
-                    ? "bg-blue-600/20 text-blue-400"
-                    : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-                )}
-              >
-                <Icon className="w-4 h-4" />
-                {label}
-              </Link>
-            ))}
-          </div>
-        )}
       </div>
     </nav>
   );
