@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 100% 56%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 20%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Rink ice pattern background */
+.ice-bg {
+  background-color: hsl(var(--background));
+  background-image:
+    linear-gradient(rgba(14, 165, 233, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(14, 165, 233, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Player card hover */
+.player-card {
+  @apply transition-all duration-200 cursor-pointer;
+}
+.player-card:hover {
+  @apply scale-[1.02] shadow-lg shadow-blue-900/20;
+}
+
+/* Cap bar */
+.cap-bar-fill {
+  @apply transition-all duration-500 ease-out;
+}
+
+/* Drag drop */
+.drag-over {
+  @apply ring-2 ring-blue-400 bg-blue-950/40;
+}
+
+/* Team color accent */
+.team-accent {
+  border-left: 3px solid var(--team-primary);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+
+/* Stat badge colors */
+.stat-elite { @apply text-yellow-300 font-bold; }
+.stat-good { @apply text-green-400; }
+.stat-average { @apply text-gray-300; }
+.stat-poor { @apply text-red-400; }
