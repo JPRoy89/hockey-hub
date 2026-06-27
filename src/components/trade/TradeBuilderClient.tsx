@@ -1,401 +1,322 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { useTradeStore } from "@/store/trade";
-import { TradeAsset, CAP_CEILING } from "@/types/hockey";
-import { formatCapHitShort, formatCapHit, cn } from "@/lib/utils";
-import {
-  Plus,
-  X,
-  ArrowLeftRight,
-  AlertTriangle,
-  CheckCircle,
-  Search,
-  ChevronDown,
-} from "lucide-react";
+import { useState, useEffect, useCallback } from 'react';
+import { ArrowLeftRight, Plus, X, ChevronDown, DollarSign, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
+
+interface RosterPlayer {
+  id: number;
+  firstName: { default: string };
+  lastName: { default: string };
+  sweaterNumber: number;
+  positionCode: string;
+  salary?: number;
+}
+
+interface TradeTeam {
+  abbrev: string;
+  roster: RosterPlayer[];
+  loading: boolean;
+  outgoing: RosterPlayer[];
+}
 
 const NHL_TEAMS = [
-  { abbrev: "ANA", name: "Anaheim Ducks" },
-  { abbrev: "BOS", name: "Boston Bruins" },
-  { abbrev: "BUF", name: "Buffalo Sabres" },
-  { abbrev: "CGY", name: "Calgary Flames" },
-  { abbrev: "CAR", name: "Carolina Hurricanes" },
-  { abbrev: "CHI", name: "Chicago Blackhawks" },
-  { abbrev: "COL", name: "Colorado Avalanche" },
-  { abbrev: "CBJ", name: "Columbus Blue Jackets" },
-  { abbrev: "DAL", name: "Dallas Stars" },
-  { abbrev: "DET", name: "Detroit Red Wings" },
-  { abbrev: "EDM", name: "Edmonton Oilers" },
-  { abbrev: "FLA", name: "Florida Panthers" },
-  { abbrev: "LAK", name: "Los Angeles Kings" },
-  { abbrev: "MIN", name: "Minnesota Wild" },
-  { abbrev: "MTL", name: "Montréal Canadiens" },
-  { abbrev: "NSH", name: "Nashville Predators" },
-  { abbrev: "NJD", name: "New Jersey Devils" },
-  { abbrev: "NYI", name: "NY Islanders" },
-  { abbrev: "NYR", name: "NY Rangers" },
-  { abbrev: "OTT", name: "Ottawa Senators" },
-  { abbrev: "PHI", name: "Philadelphia Flyers" },
-  { abbrev: "PIT", name: "Pittsburgh Penguins" },
-  { abbrev: "SJS", name: "San Jose Sharks" },
-  { abbrev: "SEA", name: "Seattle Kraken" },
-  { abbrev: "STL", name: "St. Louis Blues" },
-  { abbrev: "TBL", name: "Tampa Bay Lightning" },
-  { abbrev: "TOR", name: "Toronto Maple Leafs" },
-  { abbrev: "UTA", name: "Utah Hockey Club" },
-  { abbrev: "VAN", name: "Vancouver Canucks" },
-  { abbrev: "VGK", name: "Vegas Golden Knights" },
-  { abbrev: "WSH", name: "Washington Capitals" },
-  { abbrev: "WPG", name: "Winnipeg Jets" },
+  'ANA','BOS','BUF','CAR','CBJ','CGY','CHI','COL','DAL','DET',
+  'EDM','FLA','LAK','MIN','MTL','NJD','NSH','NYI','NYR','OTT',
+  'PHI','PIT','SEA','SJS','STL','TBL','TOR','UTA','VAN','VGK','WPG','WSH',
 ];
 
-const PICK_YEARS = [2025, 2026, 2027, 2028];
-const ROUNDS = [1, 2, 3, 4, 5, 6, 7];
+const CAP_CEILING = 88_000_000;
+const AVG_SALARY = 3_200_000;
 
-interface AddAssetFormState {
-  type: "player" | "pick" | "cash";
-  playerName: string;
-  playerPosition: string;
-  playerCapHit: string;
-  pickYear: number;
-  pickRound: number;
-  cash: string;
+const posColor: Record<string, string> = {
+  C: '#3b82f6', L: '#06b6d4', LW: '#06b6d4',
+  R: '#8b5cf6', RW: '#8b5cf6', D: '#f59e0b',
+};
+
+function capFmt(n: number) {
+  return `$${(n / 1_000_000).toFixed(2)}M`;
 }
 
 function TeamPanel({
-  side,
-  otherTeam,
+  team, index, onTeamChange, onTogglePlayer,
 }: {
-  side: ReturnType<typeof useTradeStore>["trade"]["teams"][number];
-  otherTeam?: ReturnType<typeof useTradeStore>["trade"]["teams"][number];
+  team: TradeTeam;
+  index: number;
+  onTeamChange: (abbrev: string) => void;
+  onTogglePlayer: (p: RosterPlayer) => void;
 }) {
-  const { addAsset, removeAsset } = useTradeStore();
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<AddAssetFormState>({
-    type: "player",
-    playerName: "",
-    playerPosition: "C",
-    playerCapHit: "",
-    pickYear: 2025,
-    pickRound: 1,
-    cash: "1000000",
-  });
+  const outSalary = team.outgoing.length * AVG_SALARY;
+  const inSalary = 0; // simplified
 
-  const handleAdd = () => {
-    let asset: TradeAsset | null = null;
+  const forwards = team.roster.filter(p => !['D'].includes(p.positionCode));
+  const defensemen = team.roster.filter(p => p.positionCode === 'D');
 
-    if (form.type === "player" && form.playerName) {
-      asset = {
-        type: "player",
-        player: {
-          id: Date.now(),
-          name: form.playerName,
-          position: form.playerPosition as TradeAsset["player"] extends infer P ? P extends { position: infer Pos } ? Pos : never : never,
-          capHit: parseFloat(form.playerCapHit) * 1_000_000 || 0,
-        },
-      };
-    } else if (form.type === "pick") {
-      asset = {
-        type: "pick",
-        pick: {
-          id: crypto.randomUUID(),
-          year: form.pickYear,
-          round: form.pickRound as 1 | 2 | 3 | 4 | 5 | 6 | 7,
-          originalTeam: side.teamAbbrev,
-          currentTeam: side.teamAbbrev,
-        },
-      };
-    } else if (form.type === "cash") {
-      asset = {
-        type: "cash",
-        cash: parseFloat(form.cash) || 0,
-      };
-    }
-
-    if (asset) {
-      addAsset(side.teamAbbrev, asset, "sends");
-      setShowForm(false);
-      setForm({ type: "player", playerName: "", playerPosition: "C", playerCapHit: "", pickYear: 2025, pickRound: 1, cash: "1000000" });
-    }
-  };
-
-  const capChange = side.capChange;
+  const colors = ['#3b82f6', '#06b6d4', '#f59e0b'];
+  const col = colors[index % colors.length];
 
   return (
-    <div className={cn(
-      "rounded-xl border bg-card p-4 space-y-4",
-      side.isCapCompliant ? "border-border" : "border-red-600/50"
-    )}>
+    <div style={{
+      background: 'var(--bg-surface)',
+      border: `1px solid ${col}25`,
+      borderRadius: 14, overflow: 'hidden', flex: 1, minWidth: 280,
+    }}>
       {/* Team header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-bold">{side.teamAbbrev}</h3>
-          <p className="text-xs text-muted-foreground">{side.teamName}</p>
-        </div>
-        <div className={cn(
-          "text-right",
-          side.isCapCompliant ? "text-green-400" : "text-red-400"
-        )}>
-          {side.isCapCompliant ? (
-            <CheckCircle className="w-5 h-5 ml-auto" />
-          ) : (
-            <AlertTriangle className="w-5 h-5 ml-auto" />
-          )}
-          <div className="text-xs mt-1">
-            Espace après: {formatCapHitShort(side.capSpaceAfter)}
+      <div style={{
+        background: `${col}10`,
+        borderBottom: `1px solid ${col}20`,
+        padding: '14px 16px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: 8,
+            background: `${col}20`, border: `1px solid ${col}40`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.75rem', fontWeight: 800, color: col,
+          }}>
+            {team.abbrev}
+          </div>
+          <div style={{ position: 'relative', flex: 1 }}>
+            <select
+              value={team.abbrev}
+              onChange={e => onTeamChange(e.target.value)}
+              style={{
+                appearance: 'none', width: '100%',
+                background: 'transparent',
+                border: 'none', color: '#e2e8f0',
+                fontSize: '1rem', fontWeight: 800,
+                cursor: 'pointer', outline: 'none',
+                paddingRight: 20,
+              }}
+            >
+              {NHL_TEAMS.map(t => (
+                <option key={t} value={t} style={{ background: '#0d1221' }}>{t}</option>
+              ))}
+            </select>
+            <ChevronDown size={12} color="#64748b" style={{ position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
           </div>
         </div>
-      </div>
 
-      {/* Cap impact */}
-      <div className={cn(
-        "flex items-center gap-2 text-sm font-medium px-3 py-2 rounded-lg",
-        capChange > 0 ? "bg-red-950/30 text-red-400" : capChange < 0 ? "bg-green-950/30 text-green-400" : "bg-secondary text-muted-foreground"
-      )}>
-        <span>Impact cap:</span>
-        <span>{capChange > 0 ? "+" : ""}{formatCapHitShort(capChange)}</span>
-      </div>
-
-      {/* Sends */}
-      <div>
-        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-          Envoie
-        </p>
-        <div className="space-y-1.5">
-          {side.sends.length === 0 ? (
-            <p className="text-xs text-muted-foreground italic px-2">Aucun actif sélectionné</p>
-          ) : (
-            side.sends.map((asset, idx) => (
-              <AssetChip
-                key={idx}
-                asset={asset}
-                onRemove={() => removeAsset(side.teamAbbrev, idx, "sends")}
-              />
-            ))
-          )}
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="w-full flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground border border-dashed border-border hover:border-blue-600/50 rounded-lg px-3 py-2 transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Ajouter un actif
-          </button>
-        </div>
-      </div>
-
-      {/* Add asset form */}
-      {showForm && (
-        <div className="bg-secondary/50 rounded-lg p-3 space-y-3">
-          <div className="flex gap-2">
-            {(["player", "pick", "cash"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setForm({ ...form, type: t })}
-                className={cn(
-                  "flex-1 text-xs py-1.5 rounded font-medium transition-colors",
-                  form.type === t
-                    ? "bg-blue-600 text-white"
-                    : "bg-secondary text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {t === "player" ? "Joueur" : t === "pick" ? "Choix" : "Argent"}
-              </button>
-            ))}
+        {/* Outgoing summary */}
+        {team.outgoing.length > 0 && (
+          <div style={{
+            marginTop: 10, padding: '6px 10px', borderRadius: 8,
+            background: 'rgba(239,68,68,0.08)',
+            border: '1px solid rgba(239,68,68,0.15)',
+            fontSize: '0.75rem', color: '#f87171',
+          }}>
+            ↗ {team.outgoing.length} joueur{team.outgoing.length > 1 ? 's' : ''} envoyé{team.outgoing.length > 1 ? 's' : ''} · {capFmt(outSalary)}
           </div>
+        )}
+      </div>
 
-          {form.type === "player" && (
-            <div className="space-y-2">
-              <input
-                type="text"
-                placeholder="Nom du joueur..."
-                value={form.playerName}
-                onChange={(e) => setForm({ ...form, playerName: e.target.value })}
-                className="w-full px-2 py-1.5 rounded bg-background border border-input text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={form.playerPosition}
-                  onChange={(e) => setForm({ ...form, playerPosition: e.target.value })}
-                  className="px-2 py-1.5 rounded bg-background border border-input text-xs"
-                >
-                  {["C", "LW", "RW", "D", "G"].map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  placeholder="Cap hit ($M)..."
-                  value={form.playerCapHit}
-                  onChange={(e) => setForm({ ...form, playerCapHit: e.target.value })}
-                  className="w-full px-2 py-1.5 rounded bg-background border border-input text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                  step="0.25"
-                  min="0"
-                  max="20"
-                />
-              </div>
-            </div>
-          )}
+      {/* Roster */}
+      <div style={{ padding: 12, maxHeight: 400, overflowY: 'auto' }}>
+        {team.loading ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 8 }}>
+            <div className="spinner" />
+            <span style={{ color: '#64748b', fontSize: '0.85rem' }}>Chargement...</span>
+          </div>
+        ) : (
+          <>
+            {forwards.length > 0 && (
+              <>
+                <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#3b82f6', letterSpacing: '0.1em', marginBottom: 6, paddingLeft: 4 }}>ATT</div>
+                {forwards.map(p => {
+                  const selected = team.outgoing.some(o => o.id === p.id);
+                  const name = `${p.firstName.default} ${p.lastName.default}`;
+                  const pCol = posColor[p.positionCode] || '#94a3b8';
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => onTogglePlayer(p)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '7px 8px', borderRadius: 7,
+                        border: `1px solid ${selected ? 'rgba(239,68,68,0.4)' : 'transparent'}`,
+                        background: selected ? 'rgba(239,68,68,0.08)' : 'transparent',
+                        cursor: 'pointer', marginBottom: 3,
+                        transition: 'all 0.15s',
+                      }}
+                      onMouseEnter={e => {
+                        if (!selected) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.03)';
+                      }}
+                      onMouseLeave={e => {
+                        if (!selected) (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+                      }}
+                    >
+                      <span style={{
+                        fontSize: '0.6rem', fontWeight: 700, padding: '1px 4px', borderRadius: 4,
+                        background: `${pCol}20`, color: pCol, flexShrink: 0,
+                      }}>{p.positionCode}</span>
+                      <span style={{ fontSize: '0.82rem', color: selected ? '#f87171' : '#e2e8f0', fontWeight: selected ? 700 : 500, flex: 1 }}>
+                        {name}
+                      </span>
+                      {selected ? <X size={12} color="#ef4444" /> : <Plus size={12} color="#4b5563" />}
+                    </div>
+                  );
+                })}
+              </>
+            )}
 
-          {form.type === "pick" && (
-            <div className="grid grid-cols-2 gap-2">
-              <select
-                value={form.pickYear}
-                onChange={(e) => setForm({ ...form, pickYear: parseInt(e.target.value) })}
-                className="px-2 py-1.5 rounded bg-background border border-input text-xs"
-              >
-                {PICK_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-              </select>
-              <select
-                value={form.pickRound}
-                onChange={(e) => setForm({ ...form, pickRound: parseInt(e.target.value) })}
-                className="px-2 py-1.5 rounded bg-background border border-input text-xs"
-              >
-                {ROUNDS.map((r) => <option key={r} value={r}>Ronde {r}</option>)}
-              </select>
-            </div>
-          )}
-
-          {form.type === "cash" && (
-            <input
-              type="number"
-              placeholder="Montant ($)..."
-              value={form.cash}
-              onChange={(e) => setForm({ ...form, cash: e.target.value })}
-              className="w-full px-2 py-1.5 rounded bg-background border border-input text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              step="250000"
-              min="0"
-              max="3000000"
-            />
-          )}
-
-          <button
-            onClick={handleAdd}
-            className="w-full py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors"
-          >
-            Ajouter
-          </button>
-        </div>
-      )}
-
-      {/* Receives */}
-      <div>
-        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-          Reçoit
-        </p>
-        <div className="space-y-1.5">
-          {side.receives.length === 0 ? (
-            <p className="text-xs text-muted-foreground italic px-2">Rien pour l&apos;instant</p>
-          ) : (
-            side.receives.map((asset, idx) => (
-              <AssetChip key={idx} asset={asset} />
-            ))
-          )}
-        </div>
+            {defensemen.length > 0 && (
+              <>
+                <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#f59e0b', letterSpacing: '0.1em', marginBottom: 6, marginTop: 10, paddingLeft: 4 }}>DÉF</div>
+                {defensemen.map(p => {
+                  const selected = team.outgoing.some(o => o.id === p.id);
+                  const name = `${p.firstName.default} ${p.lastName.default}`;
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => onTogglePlayer(p)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '7px 8px', borderRadius: 7,
+                        border: `1px solid ${selected ? 'rgba(239,68,68,0.4)' : 'transparent'}`,
+                        background: selected ? 'rgba(239,68,68,0.08)' : 'transparent',
+                        cursor: 'pointer', marginBottom: 3,
+                        transition: 'all 0.15s',
+                      }}
+                      onMouseEnter={e => {
+                        if (!selected) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.03)';
+                      }}
+                      onMouseLeave={e => {
+                        if (!selected) (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+                      }}
+                    >
+                      <span style={{
+                        fontSize: '0.6rem', fontWeight: 700, padding: '1px 4px', borderRadius: 4,
+                        background: 'rgba(245,158,11,0.2)', color: '#f59e0b', flexShrink: 0,
+                      }}>D</span>
+                      <span style={{ fontSize: '0.82rem', color: selected ? '#f87171' : '#e2e8f0', fontWeight: selected ? 700 : 500, flex: 1 }}>
+                        {name}
+                      </span>
+                      {selected ? <X size={12} color="#ef4444" /> : <Plus size={12} color="#4b5563" />}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-function AssetChip({
-  asset,
-  onRemove,
-}: {
-  asset: TradeAsset;
-  onRemove?: () => void;
-}) {
-  if (asset.type === "player" && asset.player) {
-    return (
-      <div className="flex items-center justify-between bg-secondary rounded-lg px-3 py-2 group">
-        <div>
-          <span className="text-sm font-medium">{asset.player.name}</span>
-          <span className="text-xs text-muted-foreground ml-2">{asset.player.position}</span>
-          {asset.player.capHit > 0 && (
-            <span className="text-xs text-blue-400 ml-2">{formatCapHit(asset.player.capHit)}</span>
-          )}
-        </div>
-        {onRemove && (
-          <button onClick={onRemove} className="text-muted-foreground hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  if (asset.type === "pick" && asset.pick) {
-    return (
-      <div className="flex items-center justify-between bg-secondary rounded-lg px-3 py-2 group">
-        <div>
-          <span className="text-sm font-medium">
-            Ronde {asset.pick.round} {asset.pick.year}
-          </span>
-          <span className="text-xs text-muted-foreground ml-2">({asset.pick.originalTeam})</span>
-        </div>
-        {onRemove && (
-          <button onClick={onRemove} className="text-muted-foreground hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  if (asset.type === "cash" && asset.cash) {
-    return (
-      <div className="flex items-center justify-between bg-secondary rounded-lg px-3 py-2 group">
-        <div>
-          <span className="text-sm font-medium">{formatCapHit(asset.cash)} argent</span>
-        </div>
-        {onRemove && (
-          <button onClick={onRemove} className="text-muted-foreground hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  return null;
-}
+const DEFAULT_TEAMS = ['MTL', 'TOR', 'BOS'];
 
 export function TradeBuilderClient() {
-  const { trade, initTrade, analyzeTrade, resetTrade } = useTradeStore();
-  const [teamSelections, setTeamSelections] = useState<string[]>(["MTL", "TOR"]);
   const [numTeams, setNumTeams] = useState(2);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [teams, setTeams] = useState<TradeTeam[]>(
+    DEFAULT_TEAMS.slice(0, 3).map(a => ({ abbrev: a, roster: [], loading: false, outgoing: [] }))
+  );
 
-  const handleStartTrade = () => {
-    const selected = teamSelections.slice(0, numTeams);
-    const teams = selected.map((abbrev) => {
-      const team = NHL_TEAMS.find((t) => t.abbrev === abbrev);
-      return {
-        abbrev,
-        name: team?.name || abbrev,
-        capSpace: 10_000_000, // Default - ideally fetch real cap space
-      };
+  const fetchRoster = useCallback(async (abbrev: string, index: number) => {
+    setTeams(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], loading: true, roster: [] };
+      return next;
     });
-    initTrade(teams);
-    setIsInitialized(true);
-  };
+    try {
+      const res = await fetch(`https://api-web.nhle.com/v1/roster/${abbrev}/20242025`);
+      if (!res.ok) throw new Error('API error');
+      const data = await res.json();
+      const roster: RosterPlayer[] = [
+        ...(data.forwards || []),
+        ...(data.defensemen || []),
+      ];
+      setTeams(prev => {
+        const next = [...prev];
+        next[index] = { ...next[index], roster, loading: false, outgoing: [] };
+        return next;
+      });
+    } catch {
+      setTeams(prev => {
+        const next = [...prev];
+        next[index] = { ...next[index], loading: false };
+        return next;
+      });
+    }
+  }, []);
 
-  if (!isInitialized || trade.teams.length === 0) {
-    return (
-      <div className="rounded-xl border border-border bg-card p-8 space-y-6 max-w-lg">
-        <h2 className="text-lg font-bold">Configurer le trade</h2>
+  useEffect(() => {
+    teams.slice(0, numTeams).forEach((t, i) => {
+      if (t.roster.length === 0 && !t.loading) fetchRoster(t.abbrev, i);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numTeams]);
 
-        <div className="space-y-2">
-          <label className="text-sm text-muted-foreground">Nombre d&apos;équipes</label>
-          <div className="flex gap-2">
-            {[2, 3].map((n) => (
+  function changeTeam(index: number, abbrev: string) {
+    setTeams(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], abbrev, roster: [], outgoing: [] };
+      return next;
+    });
+    fetchRoster(abbrev, index);
+  }
+
+  function togglePlayer(teamIndex: number, player: RosterPlayer) {
+    setTeams(prev => {
+      const next = [...prev];
+      const team = { ...next[teamIndex] };
+      const isOut = team.outgoing.some(p => p.id === player.id);
+      team.outgoing = isOut
+        ? team.outgoing.filter(p => p.id !== player.id)
+        : [...team.outgoing, player];
+      next[teamIndex] = team;
+      return next;
+    });
+  }
+
+  // Validation
+  const activeTeams = teams.slice(0, numTeams);
+  const totalOut = activeTeams.reduce((sum, t) => sum + t.outgoing.length * AVG_SALARY, 0);
+  const isBalanced = activeTeams.every(t => {
+    const out = t.outgoing.length * AVG_SALARY;
+    const incoming = activeTeams.filter((_, i) => i !== activeTeams.indexOf(t))
+      .reduce((s, other) => s + other.outgoing.length * AVG_SALARY / (numTeams - 1), 0);
+    const diff = Math.abs(out - incoming);
+    return diff < 3_000_000;
+  });
+
+  const hasPlayers = activeTeams.some(t => t.outgoing.length > 0);
+
+  return (
+    <div style={{ background: 'var(--bg-base)', minHeight: '100vh' }}>
+      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '32px 24px' }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 10,
+              background: 'rgba(245,158,11,0.1)',
+              border: '1px solid rgba(245,158,11,0.2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <ArrowLeftRight size={20} color="#f59e0b" />
+            </div>
+            <div>
+              <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#e2e8f0', letterSpacing: '-0.02em' }}>
+                Mock Trade Builder
+              </h1>
+              <p style={{ fontSize: '0.8rem', color: '#4b5563' }}>Clique sur les joueurs pour les sélectionner</p>
+            </div>
+          </div>
+
+          {/* Teams toggle */}
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[2, 3].map(n => (
               <button
                 key={n}
                 onClick={() => setNumTeams(n)}
-                className={cn(
-                  "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
-                  numTeams === n
-                    ? "bg-blue-600 text-white"
-                    : "border border-border hover:bg-secondary"
-                )}
+                style={{
+                  padding: '6px 16px', borderRadius: 8, border: 'none',
+                  cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600,
+                  background: numTeams === n ? '#f59e0b' : 'rgba(255,255,255,0.05)',
+                  color: numTeams === n ? 'black' : '#94a3b8',
+                  transition: 'all 0.15s',
+                }}
               >
                 {n} équipes
               </button>
@@ -403,130 +324,84 @@ export function TradeBuilderClient() {
           </div>
         </div>
 
-        <div className="space-y-3">
-          {Array.from({ length: numTeams }).map((_, idx) => (
-            <div key={idx}>
-              <label className="text-sm text-muted-foreground">Équipe {idx + 1}</label>
-              <select
-                value={teamSelections[idx] || ""}
-                onChange={(e) => {
-                  const updated = [...teamSelections];
-                  updated[idx] = e.target.value;
-                  setTeamSelections(updated);
-                }}
-                className="w-full mt-1 px-3 py-2 rounded-lg bg-secondary border border-input text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                <option value="">Choisir une équipe...</option>
-                {NHL_TEAMS.map(({ abbrev, name }) => (
-                  <option key={abbrev} value={abbrev}>{name} ({abbrev})</option>
+        {/* Trade summary bar */}
+        {hasPlayers && (
+          <div style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 12, padding: '14px 20px',
+            marginBottom: 20,
+            display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
+          }}>
+            <DollarSign size={16} color="#10b981" />
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                {activeTeams.map((t, i) => (
+                  t.outgoing.length > 0 && (
+                    <div key={i} style={{ fontSize: '0.82rem' }}>
+                      <span style={{ color: '#94a3b8' }}>{t.abbrev} envoie: </span>
+                      <span style={{ color: '#e2e8f0', fontWeight: 700 }}>
+                        {t.outgoing.map(p => p.lastName.default).join(', ')}
+                      </span>
+                      <span style={{ color: '#f87171', marginLeft: 6 }}>
+                        ({capFmt(t.outgoing.length * AVG_SALARY)})
+                      </span>
+                    </div>
+                  )
                 ))}
-              </select>
+              </div>
             </div>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '6px 12px', borderRadius: 8,
+              background: isBalanced ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+              border: `1px solid ${isBalanced ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)'}`,
+              color: isBalanced ? '#10b981' : '#f59e0b',
+              fontSize: '0.8rem', fontWeight: 700,
+            }}>
+              {isBalanced ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
+              {isBalanced ? 'Trade équilibré' : 'Trade déséquilibré'}
+            </div>
+            <button
+              onClick={() => setTeams(prev => prev.map(t => ({ ...t, outgoing: [] })))}
+              style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', color: '#f87171', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <RefreshCw size={12} /> Reset
+            </button>
+          </div>
+        )}
+
+        {/* Team panels */}
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          {activeTeams.map((team, i) => (
+            <TeamPanel
+              key={i}
+              team={team}
+              index={i}
+              onTeamChange={abbrev => changeTeam(i, abbrev)}
+              onTogglePlayer={p => togglePlayer(i, p)}
+            />
           ))}
+
+          {/* Arrow between */}
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            paddingTop: 80, color: '#4b5563',
+            alignSelf: 'stretch',
+          }}>
+            <ArrowLeftRight size={24} />
+          </div>
         </div>
 
-        <button
-          onClick={handleStartTrade}
-          disabled={teamSelections.slice(0, numTeams).some((t) => !t)}
-          className="w-full py-3 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-semibold transition-colors flex items-center justify-center gap-2"
-        >
-          <ArrowLeftRight className="w-4 h-4" />
-          Créer le trade
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Trade panels */}
-      <div className={cn(
-        "grid gap-4",
-        trade.teams.length === 2 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 md:grid-cols-3"
-      )}>
-        {trade.teams.map((side, idx) => (
-          <div key={side.teamAbbrev} className="relative">
-            {idx < trade.teams.length - 1 && (
-              <div className="hidden md:flex absolute -right-2 top-1/2 -translate-y-1/2 z-10 w-4 h-4 bg-red-600 rounded-full items-center justify-center">
-                <ArrowLeftRight className="w-2.5 h-2.5 text-white" />
-              </div>
-            )}
-            <TeamPanel side={side} />
-          </div>
-        ))}
-      </div>
-
-      {/* Analysis */}
-      <div className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <h3 className="font-bold flex items-center gap-2">
-          {trade.analysis.isLegal ? (
-            <CheckCircle className="w-5 h-5 text-green-400" />
-          ) : (
-            <AlertTriangle className="w-5 h-5 text-red-400" />
-          )}
-          Analyse du trade
-          {trade.analysis.isLegal ? (
-            <span className="text-green-400 text-sm font-normal">— Trade légal ✓</span>
-          ) : (
-            <span className="text-red-400 text-sm font-normal">— Problème cap</span>
-          )}
-        </h3>
-
-        {trade.analysis.issues.length > 0 && (
-          <div className="space-y-1">
-            {trade.analysis.issues.map((issue, i) => (
-              <div key={i} className="flex items-start gap-2 text-sm text-red-400">
-                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                {issue}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {trade.analysis.warnings.length > 0 && (
-          <div className="space-y-1">
-            {trade.analysis.warnings.map((w, i) => (
-              <div key={i} className="flex items-start gap-2 text-sm text-yellow-400">
-                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                {w}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {Object.entries(trade.analysis.capImpact).length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {Object.entries(trade.analysis.capImpact).map(([team, impact]) => (
-              <div key={team} className="text-center rounded-lg bg-secondary p-3">
-                <div className="text-xs text-muted-foreground mb-1">{team}</div>
-                <div className={cn(
-                  "font-bold",
-                  impact > 0 ? "text-red-400" : impact < 0 ? "text-green-400" : "text-muted-foreground"
-                )}>
-                  {impact > 0 ? "+" : ""}{formatCapHitShort(impact)}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="flex gap-3 pt-2">
-          <button
-            onClick={() => { resetTrade(); setIsInitialized(false); }}
-            className="px-4 py-2 rounded-lg border border-border hover:bg-secondary text-sm transition-colors"
-          >
-            Recommencer
-          </button>
-          <button
-            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
-            onClick={() => {
-              const url = window.location.href;
-              navigator.clipboard?.writeText(url);
-              alert("Lien copié! (le partage sera disponible prochainement)");
-            }}
-          >
-            Partager le trade
-          </button>
+        {/* Cap warning */}
+        <div style={{
+          marginTop: 20, padding: '12px 16px', borderRadius: 10,
+          background: 'rgba(59,130,246,0.04)', border: '1px solid rgba(59,130,246,0.1)',
+          fontSize: '0.78rem', color: '#4b5563',
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <AlertCircle size={14} color="#3b82f6" />
+          Salaires estimés à {capFmt(AVG_SALARY)}/joueur (moyenne NHL). Cap plafond 2024-25: {capFmt(CAP_CEILING)}.
         </div>
       </div>
     </div>
