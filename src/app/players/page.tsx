@@ -5,29 +5,34 @@ import { Search, ChevronUp, ChevronDown, Filter, TrendingUp, Users } from 'lucid
 
 interface Player {
   playerId: number;
-  firstName: { default: string };
-  lastName: { default: string };
-  teamAbbrev: { default: string };
-  position: string;
+  skaterFullName: string;
+  teamAbbrevs: string;
+  positionCode: string;
   gamesPlayed: number;
   goals: number;
   assists: number;
   points: number;
   plusMinus: number;
-  penaltyMinutes: number;
-  ppPoints: number;
   shots: number;
-  shootingPctg: number;
-  avgToi: string;
+  shootingPct: number;
+  timeOnIcePerGame: number;
+  ppPoints: number;
 }
 
-type SortKey = 'points' | 'goals' | 'assists' | 'gamesPlayed' | 'plusMinus' | 'shots' | 'shootingPctg';
+type SortKey = 'points' | 'goals' | 'assists' | 'gamesPlayed' | 'plusMinus' | 'shots' | 'shootingPct';
 
 const POSITIONS = ['All', 'C', 'L', 'R', 'D'];
 
 const posColor: Record<string, string> = {
   C: '#3b82f6', L: '#06b6d4', R: '#8b5cf6', D: '#f59e0b', G: '#10b981',
 };
+
+function formatToi(seconds: number): string {
+  if (!seconds) return '0:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
 export default function PlayersPage() {
   const [players, setPlayers] = useState<Player[]>([]);
@@ -44,32 +49,10 @@ export default function PlayersPage() {
     async function load() {
       try {
         setLoading(true);
-        const url = 'https://api.nhle.com/stats/rest/en/skater/summary?' +
-          'isAggregate=false&isGame=false' +
-          '&sort=%5B%7B%22property%22%3A%22points%22%2C%22direction%22%3A%22DESC%22%7D%5D' +
-          '&start=0&limit=500' +
-          '&cayenneExp=seasonId%3D20242025%20and%20gameTypeId%3D2';
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`NHL API ${res.status}`);
+        const res = await fetch('/api/nhl/players');
+        if (!res.ok) throw new Error(`API ${res.status}`);
         const data = await res.json();
-        const mapped: Player[] = (data.data || []).map((p: Record<string, unknown>) => ({
-          playerId: p.playerId as number,
-          firstName: { default: (p.skaterFullName as string)?.split(' ').slice(0, -1).join(' ') || '' },
-          lastName: { default: (p.skaterFullName as string)?.split(' ').slice(-1)[0] || '' },
-          teamAbbrev: { default: p.teamAbbrevs as string || '' },
-          position: p.positionCode as string || '',
-          gamesPlayed: (p.gamesPlayed as number) || 0,
-          goals: (p.goals as number) || 0,
-          assists: (p.assists as number) || 0,
-          points: (p.points as number) || 0,
-          plusMinus: (p.plusMinus as number) || 0,
-          penaltyMinutes: (p.penaltyMinutes as number) || 0,
-          ppPoints: (p.ppPoints as number) || 0,
-          shots: (p.shots as number) || 0,
-          shootingPctg: Math.round(((p.shootingPct as number) || 0) * 100) / 100,
-          avgToi: p.timeOnIcePerGame as string || '0:00',
-        }));
-        setPlayers(mapped);
+        setPlayers(data.data || []);
       } catch {
         setError('Impossible de charger les données NHL. Réessayez plus tard.');
       } finally {
@@ -81,12 +64,12 @@ export default function PlayersPage() {
 
   const filtered = useMemo(() => {
     let data = players;
-    if (position !== 'All') data = data.filter(p => p.position === position);
+    if (position !== 'All') data = data.filter(p => p.positionCode === position);
     if (search.trim()) {
       const q = search.toLowerCase();
       data = data.filter(p =>
-        `${p.firstName.default} ${p.lastName.default}`.toLowerCase().includes(q) ||
-        p.teamAbbrev.default.toLowerCase().includes(q)
+        p.skaterFullName.toLowerCase().includes(q) ||
+        p.teamAbbrevs.toLowerCase().includes(q)
       );
     }
     return [...data].sort((a, b) => {
@@ -117,9 +100,11 @@ export default function PlayersPage() {
       </div>
     </th>
   );
+
   return (
     <div style={{ background: 'var(--bg-base)', minHeight: '100vh' }}>
       <div style={{ maxWidth: 1400, margin: '0 auto', padding: '32px 24px' }}>
+
         <div style={{ marginBottom: 28 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -131,6 +116,7 @@ export default function PlayersPage() {
             </div>
           </div>
         </div>
+
         <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ position: 'relative', flex: '1', minWidth: 220 }}>
             <Search size={15} color="#4b5563" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
@@ -143,6 +129,7 @@ export default function PlayersPage() {
             ))}
           </div>
         </div>
+
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
           {loading ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 60 }}>
@@ -167,34 +154,34 @@ export default function PlayersPage() {
                     <ColHeader label="PTS" k="points" />
                     <ColHeader label="+/-" k="plusMinus" />
                     <ColHeader label="TIR" k="shots" />
-                    <ColHeader label="%" k="shootingPctg" />
+                    <ColHeader label="%" k="shootingPct" />
+                    <th style={{ textAlign: 'right' }}>TMG</th>
                   </tr></thead>
                   <tbody>
                     {paginated.map((p, i) => {
                       const rank = page * PER_PAGE + i + 1;
-                      const name = `${p.firstName.default} ${p.lastName.default}`;
-                      const pos = p.position || '?';
+                      const pos = p.positionCode || '?';
                       const col = posColor[pos] || '#94a3b8';
+                      const initials = p.skaterFullName.split(' ').map((n: string) => n[0]).join('').slice(0, 2);
                       return (
                         <tr key={p.playerId}>
                           <td style={{ textAlign: 'center', color: '#4b5563', fontSize: '0.8rem' }}>{rank}</td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{ width: 30, height: 30, borderRadius: '50%', background: `${col}20`, border: `1px solid ${col}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700, color: col, flexShrink: 0 }}>
-                                {name.split(' ').map(n => n[0]).join('').slice(0,2)}
-                              </div>
-                              <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{name}</span>
+                              <div style={{ width: 30, height: 30, borderRadius: '50%', background: `${col}20`, border: `1px solid ${col}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700, color: col, flexShrink: 0 }}>{initials}</div>
+                              <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{p.skaterFullName}</span>
                             </div>
                           </td>
                           <td style={{ textAlign: 'center' }}><span style={{ padding: '2px 7px', borderRadius: 5, background: `${col}18`, color: col, fontSize: '0.72rem', fontWeight: 700 }}>{pos}</span></td>
-                          <td><span style={{ fontWeight: 600, color: '#94a3b8', fontSize: '0.85rem' }}>{p.teamAbbrev.default}</span></td>
+                          <td><span style={{ fontWeight: 600, color: '#94a3b8', fontSize: '0.85rem' }}>{p.teamAbbrevs}</span></td>
                           <td style={{ textAlign: 'right', color: '#94a3b8' }}>{p.gamesPlayed}</td>
                           <td style={{ textAlign: 'right', fontWeight: 600, color: '#e2e8f0' }}>{p.goals}</td>
                           <td style={{ textAlign: 'right', fontWeight: 600, color: '#e2e8f0' }}>{p.assists}</td>
                           <td style={{ textAlign: 'right' }}><span style={{ fontWeight: 800, fontSize: '0.95rem', color: p.points >= 60 ? '#3b82f6' : p.points >= 30 ? '#06b6d4' : '#e2e8f0' }}>{p.points}</span></td>
                           <td style={{ textAlign: 'right', fontWeight: 600, color: p.plusMinus > 0 ? '#10b981' : p.plusMinus < 0 ? '#ef4444' : '#94a3b8' }}>{p.plusMinus > 0 ? `+${p.plusMinus}` : p.plusMinus}</td>
                           <td style={{ textAlign: 'right', color: '#94a3b8' }}>{p.shots}</td>
-                          <td style={{ textAlign: 'right', color: '#94a3b8' }}>{p.shootingPctg ? `${p.shootingPctg.toFixed(1)}%` : '-'}</td>
+                          <td style={{ textAlign: 'right', color: '#94a3b8' }}>{p.shootingPct ? `${(p.shootingPct * 100).toFixed(1)}%` : '-'}</td>
+                          <td style={{ textAlign: 'right', color: '#4b5563', fontSize: '0.8rem' }}>{formatToi(p.timeOnIcePerGame)}</td>
                         </tr>
                       );
                     })}
